@@ -1,0 +1,84 @@
+#jarvis-overlay {
+	-ms-filter: "progid:DXImageTransform.Microsoft.Alpha(Opacity=80)";
+	background: #000;
+	bottom: 0;
+	display: none;
+	left: 0;
+	opacity: .8;
+	position: fixed;
+	right: 0;
+	top: 0;
+	z-index: 100000;
+}
+#jarvis-modal {
+	background: #fff;
+	border-radius: .5em;
+	display: none;
+	left: 0;
+	margin: auto;
+	max-height: 80%;
+	max-width: 75%;
+	padding: 1em;
+	position: fixed;
+	right: 0;
+	top: 10%;
+	z-index: 100001;
+}
+#jarvis-modal .twitter-typeahead {
+	height: 100%;
+}
+#jarvis-modal .twitter-typeahead,
+#jarvis-modal .twitter-typeahead > input {
+	width: 100%;
+}
+#jarvis-modal .twitter-typeahead .tt-menu {
+	max-height: 80%;
+	position: relative !important;
+	width: 100%;
+}
+#jarvis-modal .twitter-typeahead .tt-menu .tt-cursor {
+	background: #ccc;
+}
+#jarvis-modal .tt-dataset,
+#jarvis-modal .jarvis-result {
+	border-top: 1px solid #999;
+}
+#jarvis-modal .tt-dataset:first-child,
+#jarvis-modal .jarvis-result:first-child {
+	border-top: 0;
+}
+#jarvis-modal .jarvis-result {
+	padding: 8px 4px;
+}
+#jarvis-modal .jarvis-result .jarvis-result-title {
+	color: #000;
+	font-size: larger;
+}
+#jarvis-modal .jarvis-result .jarvis-result-key {
+	color: #999;
+	font-size: smaller;
+}
+#jarvis-modal .jarvis-result .jarvis-result-description {
+	color: #000;
+	font-size: smaller;
+}
+#jarvis-modal .jarvis-result .jarvis-result-meta {
+	overflow: auto;
+	zoom: 1;
+}
+#jarvis-modal .jarvis-result .jarvis-result-label {
+	color: #000;
+	float: left;
+	text-transform: uppercase;
+}
+#jarvis-modal .jarvis-result .jarvis-result-actions {
+	float: right;
+	list-style-type: none;
+	margin: 0;
+	padding: 0;
+	width: auto;
+}
+#jarvis-modal .jarvis-result .jarvis-result-action {
+	float: right;
+	margin: 0 0 0 20px;
+}

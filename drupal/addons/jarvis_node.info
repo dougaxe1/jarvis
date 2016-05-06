@@ -1,0 +1,6 @@
+name = Jarvis Nodes
+description = Addon for searching nodes 
+version = 1.0-alpha
+package = Search
+core = 7.x
+dependencies[] = jarvis

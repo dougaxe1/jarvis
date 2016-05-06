@@ -1,0 +1,147 @@
+<?php
+/**
+ * @file
+ * Node Addon
+ */
+
+/**
+ * Implements hook_jarvis_filters
+ * @return array
+ */
+function jarvis_node_jarvis_filters() {
+  // @todo - Automatic filters for each content type?
+  return array(
+    'node' => 'Nodes'
+  );
+}
+
+/**
+ * Implements hook_jarvis_instant
+ * @param array $context
+ * @return array
+ */
+function jarvis_node_jarvis_instant($context) {
+  // @todo - 5 most recently edited nodes by this user?
+  return array(); // Nothing instant
+}
+
+/**
+ * Implements hook_jarvis_search
+ * @param string $q
+ * @param array $context
+ * @return array
+ */
+function jarvis_node_jarvis_search($q, $context) {
+  // Search only when filter is all, or filter is node
+  if (!empty($context['filter']) && $context['filter'] !== 'node') return array();
+
+  // Split words on whitespace
+  $q_words = preg_split('/\s+/', $q, null, PREG_SPLIT_NO_EMPTY);
+  $q_words_escaped = array_map('preg_quote', $q_words);
+
+  // Query parameters
+  $params = array();
+  foreach ($q_words_escaped as $i => $q_word_escaped) {
+    $params[':q' . $i . '_full'] = '[[:<:]]' . $q_word_escaped . '[[:>:]]';
+    $params[':q' . $i . '_start'] = '[[:<:]]' . $q_word_escaped;
+    $params[':q' . $i . '_contain'] = $q_word_escaped;
+  }
+  
+  // Sort by relevance of search phrase related to title, alias and body
+  $relevance = "0"; // Initial value
+  foreach ($q_words as $i => $q_word) {
+    // Keyword matches
+    $relevance .= " + if(ua.alias REGEXP :q{$i}_full, 10, 0)";
+    $relevance .= " + if(ua.alias REGEXP :q{$i}_start, 10, 0)";
+    $relevance .= " + if(n.title REGEXP :q{$i}_full, 3, 0)";
+    $relevance .= " + if(n.title REGEXP :q{$i}_start, 3, 0)";
+    $relevance .= " + if(fdb.body_value REGEXP :q{$i}_full, 1, 0)";
+    $relevance .= " + if(fdb.body_value REGEXP :q{$i}_start, 1, 0)";
+  }
+  $relevance .= " as 'jarvis_sort' \n";
+
+  // Search for matching titles, aliases, body, or nid
+  $where = "(";
+  // Only need to search nid if a single numeric word
+  if (count($q_words) === 1 && is_numeric($q)) {
+    $where .= "n.nid = :q OR";
+    $params[':q'] = $q;
+  }
+  $where .= "(1 = 1";
+  foreach ($q_words as $i => $q_word) {
+    $where .= " AND (";
+    $where .= " ua.alias REGEXP :q{$i}_contain";
+    $where .= " OR n.title REGEXP :q{$i}_contain";
+    $where .= " OR fdb.body_value REGEXP :q{$i}_contain";
+    $where .= ") \n";
+  }
+  $where .= ")) \n";
+
+  $query = "SELECT DISTINCT \n" . 
+            "  n.nid AS 'id', \n" . 
+            "  n.type AS 'type', \n" . 
+            "  n.title AS 'title', \n" . 
+            "  ua.alias AS 'alias', \n" .
+            "  fdb.body_value as 'description', \n" .
+               $relevance .
+            "FROM \n" . 
+            "  {node} n \n" . 
+            "  LEFT JOIN {url_alias} ua ON " .
+            "    CONCAT('node/', n.nid) = ua.source AND " .
+            "    n.language = ua.language \n" .
+            "  LEFT JOIN {field_data_body} fdb ON " .
+            "    n.type = fdb.entity_type AND " .
+            "    n.nid = fdb.entity_id AND " .
+            "    fdb.deleted = 0 AND " .
+            "    fdb.delta = 0 AND " .
+            "    n.language = fdb.language \n" .
+            "WHERE \n" .
+               $where . 
+            "ORDER BY \n" .
+            "  jarvis_sort DESC, \n" . // Jarvis match best to worst
+            "  LENGTH(LOWER(n.title)), \n" . // Title length shortest to longest
+            "  n.changed DESC \n" . // Updated most recently to oldest
+            "LIMIT 20";
+
+  // @see https://api.drupal.org/api/drupal/includes!database!database.inc/function/db_query/7
+  $db_result = db_query($query, $params);
+  $db_results = $db_result->fetchAll();
+
+  $node_types = _jarvis_node_types(); // User friendly labels
+  $results = array();
+
+  foreach ($db_results as $node) {
+    $results[] = array(
+      'id' => $node->id,
+      'title' => $node->title,
+      'key' => $node->alias,
+      'abstract' => truncate_utf8($node->description, 200, TRUE, TRUE, TRUE),
+      'type' => 'node',
+      'label' => $node_types[$node->type],
+      'actions' => array(
+        array(
+          'title' => 'Edit',
+          'url' => url('node/' . $node->id .'/edit')
+        ),
+        array(
+          'title' => 'View',
+          'url' => url('node/' . $node->id)
+        )
+      )
+    );
+  }
+
+  return $results;
+}
+
+/**
+ * Internal function to get node types
+ * @return array
+ */
+function _jarvis_node_types() {
+  $types = array();
+  foreach (node_type_get_types() as $node_type => $node) {
+    $types[$node_type] = $node->name;
+  }
+  return $types;
+}

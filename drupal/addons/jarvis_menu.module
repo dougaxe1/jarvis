@@ -1,0 +1,119 @@
+<?php
+/**
+ * @file
+ * Menu Addon
+ */
+
+/**
+ * Implements hook_jarvis_filters
+ * @return array
+ */
+function jarvis_menu_jarvis_filters() {
+  return array(
+    'menu' => 'Menu items'
+  );
+}
+
+/**
+ * Implements hook_jarvis_instant
+ * @param array $context
+ * @return array
+ */
+function jarvis_menu_jarvis_instant($context) {
+  $menu_items = array();
+  $menus = array('management', 'user-menu');
+  $data = array();
+  $tree = array();
+
+  /**
+   * Hook jarvis_menus
+   * Allows modules to add additional menus
+   * @var array
+   */
+  drupal_alter('jarvis_menus', $menus);
+
+  // Get all menu items
+  foreach ($menus as $menu) {
+    $data = menu_tree_all_data($menu);
+    foreach ($data as $tree) {
+      $menu_items = array_merge(
+        $menu_items, 
+        _jarvis_menu_items(array($tree), '', $context)
+      );
+    }
+  }
+
+  return $menu_items;
+}
+
+/**
+ * Implements hook_jarvis_search
+ * @param string $q
+ * @param array $context
+ * @return array
+ */
+function jarvis_menu_jarvis_search($q, $context) {
+  // Search only when filter is all, or filter is menu
+  if (!empty($context['filter']) && $context['filter'] !== 'menu') return array();
+
+  return array(); // Nothing new
+}
+
+/**
+ * Internal function to parse through menu trees
+ * @param array $tree
+ * @param string $parent Parent title string
+ * @param array $context Context
+ * @return array
+ */
+function _jarvis_menu_items($tree, $parent, $context) {
+  static $id = 0;
+  // Prevent runaway menus
+  if ( $id++ > 1000 ) return array();
+
+  $menu_items = array();
+
+  foreach ($tree as $menu_item) {
+    // Skip inaccessible, invisible links, or links that point their parent.
+    if (!$menu_item['link']['access'] 
+      || ($menu_item['link']['type'] & MENU_LINKS_TO_PARENT)
+      || $menu_item['link']['hidden'] == 1) {
+      continue;
+    }
+
+    $menu_item_parent = $parent;
+
+    if (!empty($menu_item['link']['link_path'])) {
+      // Add link title to parent string for children
+      $menu_item_parent .= $menu_item['link']['link_title'] . ' » ';
+      
+      // Exclude current menu item
+      if ($context['path'] !== $menu_item['link']['link_path']){
+        // Add menu item to results
+        $menu_items[] = array(
+          'id' => null, // @todo - Is searching menu items by ID useful?
+          'title' => $parent . $menu_item['link']['link_title'],
+          'key' => $menu_item['link']['link_path'],
+          'abstract' => '',
+          'type' => 'menu',
+          'label' => 'Menu Item', // @todo - Include which menu it came from?
+          'actions' => array(
+            array(
+              'title' => 'Visit',
+              'url' => url($menu_item['link']['link_path'])
+            )
+          )
+        );
+      }
+    }
+    // If there are child menu items, recurse
+    if (!empty($menu_item['below'])) {
+      $menu_items = array_merge(
+          $menu_items, 
+          _jarvis_menu_items($menu_item['below'], $menu_item_parent, $context)
+      );
+    }
+  }
+
+  return $menu_items;
+}

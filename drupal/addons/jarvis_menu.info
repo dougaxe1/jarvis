@@ -1,0 +1,6 @@
+name = Jarvis Menus
+description = Addon for searching menus 
+version = 1.0-alpha
+package = Search
+core = 7.x
+dependencies[] = jarvis

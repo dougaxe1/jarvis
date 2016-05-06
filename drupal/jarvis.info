@@ -1,0 +1,5 @@
+name = Jarvis
+description = Jarvis is your administration assistant, putting Drupal at your fingertips.
+version = 1.0-alpha
+package = Search
+core = 7.x

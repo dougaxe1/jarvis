@@ -1,0 +1,270 @@
+<?php
+/**
+ * @file
+ * Main Jarvis class
+ * @todo - normalize module_invoke_all return formats
+ */
+
+class Jarvis {
+
+  /**
+   * Debug will throw exceptions on incorrect behavior
+   * @var bool
+   */
+  protected $debug = FALSE;
+
+  /**
+   * Settings
+   * @var array of key => val
+   */
+  protected $settings = array();
+
+  /**
+   * Singleton instance
+   */
+  private static $instance = FALSE;
+
+  /**
+   * Singleton
+   */
+  public static function instance() {
+    if (!self::$instance) {
+      self::$instance = new self();
+    }
+    return self::$instance;
+  }
+
+  /**
+   * Constructor
+   */
+  private function __construct() {
+    $this->debug = error_reporting() === -1 || error_reporting() > E_NOTICE;
+
+    // Settings
+    $this->settings = array(
+      'debug' => $this->debug,
+      'hotkey' => '/',
+      'keycode' => 191, // JavaScript keycode equivelent
+      'search' => array( // Endpoint
+        'url' => '/jarvis/search',
+        'data' => array()
+      ),
+    );
+  }
+
+  public function install() {
+    // @todo Install field for customizing hotkey
+    // @todo Custom permissions beyond "view"
+  }
+
+  /**
+   * Is Jarvis Available?
+   * @return bool
+   */
+  public function is_available() {
+    return user_is_logged_in() && user_access('access content');
+  }
+
+  /**
+   * Initialize
+   *
+   * @hook_init
+   */
+  public function init() {
+    // Core addons are included via separate modules
+
+    /**
+     * Hook jarvis_filters
+     * @var array
+     */
+    $this->settings['filters'] = module_invoke_all('jarvis_filters');
+  }
+
+  /**
+   * Setup
+   *
+   * @hook_init
+   */
+  public function setup() {
+    if (!$this->is_available()) return;
+
+    //
+    // CSS
+    //
+    drupal_add_css(drupal_get_path('module', 'jarvis') . '/css/jarvis.css');
+
+    //
+    // JavaScript
+    //
+
+    // Libraries
+
+    if ($this->debug) {
+      drupal_add_js(drupal_get_path('module', 'jarvis') . '/vendor/jquery-1.11.3.min.js', array('group' => JS_LIBRARY)); // Drupal is bundled with version 1.4.4
+      drupal_add_js(drupal_get_path('module', 'jarvis') . '/vendor/typeahead.jquery.js', array('group' => JS_LIBRARY));
+      drupal_add_js(drupal_get_path('module', 'jarvis') . '/vendor/handlebars.min.js', array('group' => JS_LIBRARY));
+    } else {
+      drupal_add_js(drupal_get_path('module', 'jarvis') . '/vendor/jquery-1.11.3.min.js', array('group' => JS_LIBRARY)); // Drupal is bundled with version 1.4.4
+      drupal_add_js(drupal_get_path('module', 'jarvis') . '/vendor/typeahead.jquery.min.js', array('group' => JS_LIBRARY));
+      drupal_add_js(drupal_get_path('module', 'jarvis') . '/vendor/handlebars.min.js', array('group' => JS_LIBRARY));
+    }
+
+    // Jarvis JS
+    $localize = array(
+      'settings' => $this->settings, // Jarvis settings
+      'context' => $this->create_context(array('ajax' => TRUE)), // AJAX context
+      'instant' => $this->instant() // Instant results
+    );
+    drupal_add_js('var jarvis = ' . json_encode($localize) . ';', array(
+      'type' => 'inline',
+      'group' => JS_LIBRARY,
+      'cache' => FALSE, // Avoid caching
+      'preprocess' => FALSE // Avoid aggregation
+    ));
+    drupal_add_js(drupal_get_path('module', 'jarvis') . '/js/jarvis.js', array('group' => JS_LIBRARY));
+
+    // Prevent custom jQuery from overwriting default
+    drupal_add_js('jQuery.noConflict(true);', array(
+      'type' => 'inline',
+      'group' => JS_LIBRARY
+    ));
+  }
+
+  /**
+   * Menu Endpoint
+   *
+   * @hook_menu
+   * @return array
+   */
+  public function menu() {
+    $items = array();
+    $path = ltrim($this->settings['search']['url'], '/');
+    // Jarvis node search
+    $items[$path] = array(
+      'page callback' => '_jarvis_search',
+      'access callback' => '_jarvis_access_callback',
+      'access arguments' => '',
+      'delivery callback' => 'drupal_json_output',
+      'type' => MENU_CALLBACK
+    );
+    
+    return $items;
+  }
+
+  /**
+   * Create context
+   * @param array $context Initial context values
+   * @return array
+   */
+  protected function create_context(array $context = array()) {
+    $default = array(
+      'instant' => FALSE,
+      'ajax' => FALSE,
+      'filter' => FALSE,
+      'path' => current_path(),
+      'admin' => path_is_admin(current_path()),
+      'node' => menu_get_object() ? menu_get_object()->nid : FALSE // @todo - Test
+    );
+    $context = array_merge($default, $context);
+
+    /**
+     * Hook jarvis_context
+     * @var array
+     */
+    drupal_alter('jarvis_context', $context);
+
+    return $context;
+  }
+
+  /**
+   * Instant
+   * @return array
+   */
+  protected function instant() {
+    $instant_context = $this->create_context(array('instant' => TRUE));
+    $results = array();
+    
+    /**
+     * Hook jarvis_instant
+     * @var array
+     */
+    $results = module_invoke_all('jarvis_instant', $instant_context);
+
+    /**
+     * Hook jarvis_instant_results
+     * @var array
+     */
+    drupal_alter('jarvis_instant_results', $results, $instant_context);
+
+    return $results;
+  }
+
+  /**
+   * Search
+   */
+  public function search() {
+    if (!$this->is_available()) return array('success' => FALSE);
+
+    $query = !empty($_REQUEST['query']) ? trim($_REQUEST['query']) : '';
+    $ajax_context = !empty($_REQUEST['context']) && is_array(json_decode($_REQUEST['context'], true)) ? json_decode($_REQUEST['context'], true) : array();
+    $results = array();
+
+    if (strlen($query) > 0) {
+      $ajax_context = $this->create_context($ajax_context);
+
+      /**
+       * Hook jarvis_search
+       * @var array
+       */
+      $results = module_invoke_all('jarvis_search', $query, $ajax_context);
+    }
+
+    /**
+     * Hook jarvis_search_results
+     * @var array
+     */
+    drupal_alter('jarvis_search_results', $results, $query, $ajax_context);
+
+    // Send response
+    return array(
+      'success' => TRUE,
+      'data' => $results
+    );
+  }
+
+}
+
+/**
+ * Implements hook_init()
+ */
+function jarvis_init() {
+  Jarvis::instance()->init();
+}
+
+/**
+ * Implements hook_page_build()
+ */
+function jarvis_page_build() {
+  Jarvis::instance()->setup();
+}
+
+/**
+ * Implements hook_menu()
+ */
+function jarvis_menu() {
+  return Jarvis::instance()->menu();
+}
+
+/**
+ * Internal Jarvis Search (from hook_menu)
+ */
+function _jarvis_search() {
+  return Jarvis::instance()->search();
+}
+
+/**
+ * Access Callback for Jarvis search endpoint (from hook_menu)
+ */
+function _jarvis_access_callback() {
+  return Jarvis::instance()->is_available();
+}
